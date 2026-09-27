@@ -4,64 +4,43 @@
 
 이 앱은 SQL Injection, OS 명령 실행, SSTI, SSRF, 업로드 파일 실행을 의도적으로 포함합니다. 실제 개인정보나 운영 AWS 계정으로 실습하지 말고, 실습용 VPC·EC2·RDS·S3와 가짜 계정만 사용하세요.
 
-## 실행
+이 README는 **파일 전체 구조 → 로컬 실행과 AWS 구성 → 기능 사용법** 순서입니다. 먼저 위 구조를 확인하고, 배포 환경에 맞게 구성한 뒤 아래 기능 설명을 따라 해보세요.
 
-Linux EC2 또는 macOS, Node.js **22.13 이상**이 필요합니다. Windows의 명령 실행은 지원하지 않습니다.
+## 파일 전체 구조
 
-```sh
-npm ci
-cp .env.example .env
-npm start
+### 프로젝트 파일 목록
+
+```text
+WHS-Cloud9-Vuln-Web/
+├── README.md
+├── .env.example
+├── .env                    # .env.example을 복사해 생성하며 Git에는 포함하지 않음
+├── .gitignore
+├── package.json
+├── package-lock.json
+├── server.js
+├── secrets.js
+├── database.js
+├── schema.sql
+├── exercises.js
+├── image.js
+├── command-lab.js
+├── files.js
+├── file-runner.js
+├── public/
+│   ├── index.html
+│   ├── app.js
+│   ├── style.css
+│   └── whitehat-school-logo.png
+├── data/                 # 로컬 실행 시 생성되며 Git에는 포함되지 않음
+│   ├── users.sqlite
+│   └── uploads/
+└── node_modules/         # npm ci 실행 시 생성되며 Git에는 포함되지 않음
 ```
 
-http://127.0.0.1:3000 에 접속해 먼저 회원가입하세요. 기본 계정은 없습니다. RDS 연결 전에는 `DB_MODE=sqlite`로 `data/users.sqlite` 파일에 계정을 저장합니다. 재시작해도 계정·프로필·업로드 파일은 남고 로그인 세션만 사라집니다.
+`data/`는 `DB_MODE=sqlite` 또는 `STORAGE_MODE=local`로 실행할 때 앱이 만드는 로컬 저장 위치입니다. AWS 모드에서는 계정·세션을 RDS에, 업로드 파일을 S3에 저장합니다. `node_modules/`는 `npm ci`가 의존성(앱이 사용하는 라이브러리)을 설치하면서 만드는 폴더입니다.
 
-### 화면 사용
-
-1. 첫 화면에서 이메일과 비밀번호로 가입한 다음 로그인합니다.
-2. 상단 네비게이션이나 첫 화면의 큰 버튼을 눌러 `파일 업로드`, `OS 명령`, `SSTI 실습`, `팀 프로필` 모달을 엽니다.
-3. 파일 모달에서 파일을 올리면 설정에 따라 S3 또는 로컬 폴더에 저장됩니다. 지원되는 `.js`, `.mjs`, `.cjs`, `.py`, `.sh` 파일은 목록에서 **실행**할 수 있습니다.
-4. OS 명령 모달은 입력한 명령을 서버에서 실행합니다. 팀 프로필은 서버가 입력한 URL에 요청해 이미지 정보를 가져옵니다.
-5. 오른쪽 위 로그아웃 버튼으로 세션을 종료합니다.
-
-각 기능은 취약점 실습용입니다. 업로드한 코드, OS 명령, SSTI 템플릿은 EC2의 앱 사용자 권한으로 실행됩니다. 테스트할 때는 출력 문구 확인처럼 영향이 작은 입력을 사용하세요.
-
-| API | 기능 |
-| --- | --- |
-| `POST /api/register` | 사용자 가입 |
-| `POST /api/login`, `POST /api/logout`, `GET /api/me` | 로그인, 로그아웃, 현재 사용자 확인 |
-| `POST /api/files`, `GET /api/files` | 파일 업로드와 현재 사용자 파일 목록 |
-| `POST /api/files/execute` | S3 또는 로컬에 저장된 지원 스크립트 실행 |
-| `POST /api/labs/os-command` | OS 명령 실습 |
-| `POST /api/labs/ssti` | EJS 템플릿 해석 실습 |
-| `POST /api/images/preview` | 서버가 URL에 요청해 이미지 미리보기 |
-| `POST /api/profile/image` | 미리 본 이미지를 계정 프로필로 저장 |
-
-### SSTI 개념과 실습 순서
-
-SSTI(Server-Side Template Injection, 서버 측 템플릿 삽입)는 사용자가 입력한 **글**을 서버가 **실행할 코드**로 해석하는 취약점입니다. 이 앱의 템플릿 도구는 EJS(HTML 등에 JavaScript 결과를 넣는 도구)입니다. [EJS 공식 설명](https://ejs.co/)의 표현처럼 EJS는 JavaScript를 실행합니다. 현재 [`server.js`](server.js)의 `/api/labs/ssti`는 사용자가 입력한 문자열 전체를 `ejs.render()`에 넘깁니다. 따라서 출력 문구만 바꾸는 것을 넘어 서버의 JavaScript 실행 권한을 사용할 수 있습니다.
-
-로컬 또는 **승인된 실습 EC2**에서 로그인한 뒤 상단 메뉴나 대시보드의 **SSTI 실습** 버튼을 누릅니다. 입력창에 아래 내용을 하나씩 넣고 **결과 보기**를 누르세요.
-
-1. `<%= 7 * 7 %>` → `49`가 나오면 입력이 템플릿 코드로 해석된 것입니다.
-2. `<%= process.version %>` → 서버의 Node.js 버전이 나오면 브라우저가 아니라 **서버의 JavaScript 실행 환경**에 접근한 것입니다.
-3. `<%= process.getBuiltinModule('child_process').execFileSync('whoami').toString().trim() %>` → 웹앱을 실행한 OS 계정 이름이 나오면 RCE(원격 코드 실행: 웹 요청으로 서버에서 코드를 실행함)를 확인한 것입니다. `whoami`는 현재 사용자 이름만 출력하며 파일이나 AWS 자원을 바꾸지 않습니다.
-
-이 실습은 **로그인한 사용자만** 호출할 수 있습니다. 템플릿 입력은 최대 2048자이지만, 길이 제한은 실행 권한을 제한하지 않습니다. 실습 EC2에 S3 또는 Secrets Manager 권한을 가진 IAM 역할(EC2가 AWS에 접근할 때 쓰는 권한)이 연결되어 있다면, 코드 실행자는 그 역할이 허용한 범위까지 접근할 수 있습니다. 실제 접근 범위는 배포 시 부여한 권한과 네트워크 설정을 따르며, 위 세 단계만으로 AWS 자원 접근을 검증한 것은 아닙니다. 실습에는 전용 EC2·가짜 데이터·최소 권한의 역할을 사용하세요. [OWASP SSTI 설명](https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/07-Injection/18-Server-side_Template_Injection/)
-
-같은 기능을 API로 직접 호출하려면 `POST /api/labs/ssti`에 `{ "template": "<%= 7 * 7 %>" }`를 보냅니다. 브라우저 개발자 도구의 콘솔에서는 로그인 상태에서 아래 예시를 실행할 수 있습니다.
-
-```js
-fetch('/api/labs/ssti', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-WHS-Request': '1' },
-  body: JSON.stringify({ template: '<%= 7 * 7 %>' })
-}).then(response => response.json()).then(console.log);
-```
-
-템플릿에는 로그인한 사용자의 `name`도 전달됩니다. 위 예시는 무해한 확인용이며, 실습 서버의 파일·비밀값을 실제로 열거나 외부로 전송하는 명령은 포함하지 않습니다.
-
-## 코드 구성
+### 앱과 저장소의 연결
 
 ```mermaid
 flowchart TD
@@ -75,20 +54,25 @@ flowchart TD
   S --> R[file-runner.js: 선택한 파일 실행]
   S --> D[database.js]
   D -->|sqlite| Q[(data/users.sqlite)]
-D -->|MySQL 계정 + 로그인 세션| M[(RDS MySQL)]
+  D -->|MySQL 계정 + 로그인 세션| M[(RDS MySQL)]
 ```
 
-### 파일별 역할
+### 주요 파일의 역할
 
 | 파일 | 역할 |
 | --- | --- |
 | `server.js` | Express 앱 시작, 로그인, 세션, API 경로 연결 |
+| `package.json`, `package-lock.json` | 앱 실행 명령과 설치할 라이브러리 목록·버전 기록 |
+| `.env.example` | 로컬 설정을 시작할 때 복사하는 환경변수 예시 |
+| `.gitignore` | `.env`, `data/`, `node_modules/`가 Git에 올라가지 않게 제외 |
 | `public/index.html` | 로그인 화면, 인덱스, 네비게이션과 모달의 HTML |
 | `public/app.js` | 브라우저 동작: 로그인 요청, 버튼·모달, 파일 업로드와 API 호출 |
 | `public/style.css` | 화면 디자인과 모바일 크기 조정 |
 | `database.js` | SQLite 또는 RDS MySQL 연결 |
 | `schema.sql` | RDS에 `users`, `sessions` 테이블을 생성하는 SQL |
 | `exercises.js` | SQL Injection 로그인과 SSRF 이미지 요청 실습 |
+| `image.js` | 외부에서 가져온 이미지 형식을 확인 |
+| `secrets.js` | 설정된 경우 Secrets Manager에서 비밀값을 읽음 |
 | `command-lab.js` | OS 명령 실행 실습 |
 | `files.js` | 파일 업로드, 사용자별 목록 조회, S3/로컬 저장 |
 | `file-runner.js` | 저장된 스크립트를 서버에서 실행하고 결과 반환 |
@@ -96,7 +80,19 @@ D -->|MySQL 계정 + 로그인 세션| M[(RDS MySQL)]
 
 SQLite 모드에서는 로그인 세션이 메모리에 있어 서버 재시작 시 로그아웃됩니다. MySQL 모드에서는 로그인 세션도 RDS의 `sessions` 테이블에 저장하므로 여러 EC2 인스턴스가 공유할 수 있습니다. 이 앱에서 EC2 웹 서버 계층은 stateless(어느 EC2가 요청을 받아도 같은 공유 DB/S3 상태를 사용)하게 동작합니다.
 
-## EC2에 올릴 때 직접 수정할 값
+## 로컬에서 시작하기
+
+Linux EC2 또는 macOS, Node.js **22.13 이상**이 필요합니다. Windows의 명령 실행은 지원하지 않습니다.
+
+```sh
+npm ci
+cp .env.example .env
+npm start
+```
+
+http://127.0.0.1:3000 에 접속해 먼저 회원가입하세요. 기본 계정은 없습니다. RDS 연결 전에는 `DB_MODE=sqlite`로 `data/users.sqlite` 파일에 계정을 저장합니다. 재시작해도 계정·프로필·업로드 파일은 남고 로그인 세션만 사라집니다.
+
+## AWS 배포 설정
 
 `.env`에서:
 
@@ -136,52 +132,7 @@ S3_PREFIX=whs-uploads/
 
 `.env.example`을 복사해 `.env`를 만들고 실제 값만 채웁니다. `.env`는 비밀번호와 세션 키가 있어 외부에 공유하거나 Git에 올리면 안 됩니다.
 
-### AWS Secrets Manager 연결
-
-EC2에서는 RDS 비밀번호와 `SESSION_SECRET`을 `.env`에 적지 않고 Secrets Manager에서 가져옵니다. 앱 시작 시 한 번 읽으므로, 비밀값을 읽지 못하면 잘못된 기본값으로 실행하지 않고 시작을 멈춥니다. 앱은 EC2 인스턴스 프로파일(IAM 역할)의 임시 자격 증명을 AWS SDK에서 자동으로 사용합니다. AWS 액세스 키를 코드나 `.env`에 넣지 마세요. [AWS SDK for JavaScript v3 공식 예제](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/javascript_secrets-manager_code_examples.html)
-
-#### 1. 비밀값 만들기
-
-AWS 콘솔에서 **Secrets Manager → Store a new secret → Other type of secret**을 고르고, 아래 키 이름 그대로 JSON을 저장합니다. 예를 들어 이름은 `whs-cloud9-vuln-web/prod`로 정할 수 있습니다.
-
-```json
-{
-  "SESSION_SECRET": "길고-무작위인-세션-서명-값",
-  "DB_HOST": "RDS의 실제 엔드포인트",
-  "DB_NAME": "whs_cloud9",
-  "DB_USER": "whs_app",
-  "DB_PASSWORD": "앱-DB-비밀번호"
-}
-```
-
-`DB_PORT`, `DB_SSL_CA`, S3 버킷과 리전처럼 비밀이 아닌 설정은 EC2 `.env`에 둡니다. RDS CA 인증서 파일은 EC2에 따로 배포해야 합니다.
-
-#### 2. EC2가 비밀값을 읽도록 설정
-
-EC2에 연결된 IAM 역할에 `secretsmanager:GetSecretValue`를 추가하고, 리소스 범위는 방금 만든 비밀의 ARN 하나로 제한합니다. 기본 AWS 관리 키가 아닌 고객 관리형 KMS 키로 암호화했다면 해당 키에 대한 `kms:Decrypt` 권한도 필요합니다. 역할은 EC2가 AWS API를 부를 때 임시 자격 증명을 주는 기능입니다. [Secrets Manager 권한 공식 안내](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_iam-policies.html)
-
-EC2가 private subnet에 있고 NAT 인터넷 경로가 없다면 VPC에 Secrets Manager 인터페이스 엔드포인트(`com.amazonaws.ap-northeast-2.secretsmanager`)를 연결해야 합니다. 엔드포인트 보안 그룹은 EC2 보안 그룹에서 오는 HTTPS(443)를 허용해야 합니다. private subnet에 둔 앱도 비밀 저장소까지 네트워크로 연결되어야 값을 가져올 수 있습니다.
-
-#### 3. EC2 환경 설정 및 실행
-
-EC2의 `.env`에는 다음처럼 연결 모드와 비밀 이름만 적고, `DB_PASSWORD`나 `SESSION_SECRET`은 적지 않습니다.
-
-```dotenv
-HOST=0.0.0.0
-PORT=3000
-SECRETS_MANAGER_SECRET_ID=whs-cloud9-vuln-web/prod
-DB_MODE=mysql
-DB_PORT=3306
-DB_SSL_CA=/opt/whs-cloud9/certs/global-bundle.pem
-STORAGE_MODE=s3
-AWS_REGION=ap-northeast-2
-S3_BUCKET=여기에-S3-버킷-이름
-S3_PREFIX=whs-uploads/
-```
-
-필요한 IAM 권한이 부여된 역할을 EC2에 연결한 뒤 `npm install`과 `npm start`를 실행합니다. Secrets Manager 비밀을 수정하거나 교체해도 실행 중인 프로세스는 시작 때 읽은 값을 계속 사용하므로 앱 프로세스를 재시작해야 새 값을 사용합니다. AWS가 관리하는 기본 Secrets Manager 암호화 키를 사용할 때는 서비스가 복호화를 처리하며, 고객 관리형 키 사용 시 `kms:Decrypt` 권한을 별도로 확인합니다. [Secrets Manager 암호화 공식 안내](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html)
-
-### RDS MySQL 설치 안내서
+### RDS MySQL 설정
 
 이 앱은 사용자 계정과 로그인 세션을 RDS MySQL에 저장합니다. RDS 인스턴스는 EC2와 같은 리전에 만들고, 인터넷에서 직접 접근하지 못하도록 설정하세요. RDS 콘솔 화면 이름은 AWS가 바꿀 수 있으므로 [RDS DB 인스턴스 생성 공식 안내](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_CreateDBInstance.html)도 함께 참고하세요.
 
@@ -231,7 +182,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON whs_cloud9.sessions TO 'whs_app'@'%';
 
 #### 4. EC2에서 앱 설정
 
-Secrets Manager를 쓰지 않는 로컬/수동 설정에서는 프로젝트 `.env`에 RDS endpoint, DB 이름과 앱 계정을 설정합니다. AWS 배포는 위의 Secrets Manager 안내대로 민감값을 저장합니다. `DB_SSL_CA`는 인증서 파일의 실제 경로여야 합니다.
+Secrets Manager를 쓰지 않는 로컬/수동 설정에서는 프로젝트 `.env`에 RDS endpoint, DB 이름과 앱 계정을 설정합니다. AWS 배포에서는 아래의 Secrets Manager 연결 절차에서 민감값을 저장합니다. `DB_SSL_CA`는 인증서 파일의 실제 경로여야 합니다.
 
 ```dotenv
 DB_MODE=mysql
@@ -268,6 +219,51 @@ DELETE FROM whs_cloud9.sessions WHERE expires <= UNIX_TIMESTAMP(CURRENT_TIMESTAM
 
 연결 코드는 `database.js`, 의도적으로 취약한 로그인 쿼리는 `exercises.js`입니다. MySQL 연결은 TLS(암호화 연결)를 검증합니다. 실습용 로그인 비밀번호는 SHA-256으로 저장합니다. 이는 운영용 비밀번호 저장 방식이 아닙니다. 이전 버전의 scrypt 계정은 이 버전과 호환되지 않으므로 별도의 실습 DB/계정을 사용하세요.
 
+### AWS Secrets Manager 연결
+
+EC2에서는 RDS 비밀번호와 `SESSION_SECRET`을 `.env`에 적지 않고 Secrets Manager에서 가져옵니다. 앱 시작 시 한 번 읽으므로, 비밀값을 읽지 못하면 잘못된 기본값으로 실행하지 않고 시작을 멈춥니다. 앱은 EC2 인스턴스 프로파일(IAM 역할)의 임시 자격 증명을 AWS SDK에서 자동으로 사용합니다. AWS 액세스 키를 코드나 `.env`에 넣지 마세요. [AWS SDK for JavaScript v3 공식 예제](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/javascript_secrets-manager_code_examples.html)
+
+#### 1. 비밀값 만들기
+
+AWS 콘솔에서 **Secrets Manager → Store a new secret → Other type of secret**을 고르고, 아래 키 이름 그대로 JSON을 저장합니다. 예를 들어 이름은 `whs-cloud9-vuln-web/prod`로 정할 수 있습니다.
+
+```json
+{
+  "SESSION_SECRET": "길고-무작위인-세션-서명-값",
+  "DB_HOST": "RDS의 실제 엔드포인트",
+  "DB_NAME": "whs_cloud9",
+  "DB_USER": "whs_app",
+  "DB_PASSWORD": "앱-DB-비밀번호"
+}
+```
+
+`DB_PORT`, `DB_SSL_CA`, S3 버킷과 리전처럼 비밀이 아닌 설정은 EC2 `.env`에 둡니다. RDS CA 인증서 파일은 EC2에 따로 배포해야 합니다.
+
+#### 2. EC2가 비밀값을 읽도록 설정
+
+EC2에 연결된 IAM 역할에 `secretsmanager:GetSecretValue`를 추가하고, 리소스 범위는 방금 만든 비밀의 ARN 하나로 제한합니다. 기본 AWS 관리 키가 아닌 고객 관리형 KMS 키로 암호화했다면 해당 키에 대한 `kms:Decrypt` 권한도 필요합니다. 역할은 EC2가 AWS API를 부를 때 임시 자격 증명을 주는 기능입니다. [Secrets Manager 권한 공식 안내](https://docs.aws.amazon.com/secretsmanager/latest/userguide/auth-and-access_iam-policies.html)
+
+EC2가 private subnet에 있고 NAT 인터넷 경로가 없다면 VPC에 Secrets Manager 인터페이스 엔드포인트(`com.amazonaws.ap-northeast-2.secretsmanager`)를 연결해야 합니다. 엔드포인트 보안 그룹은 EC2 보안 그룹에서 오는 HTTPS(443)를 허용해야 합니다. private subnet에 둔 앱도 비밀 저장소까지 네트워크로 연결되어야 값을 가져올 수 있습니다.
+
+#### 3. EC2 환경 설정 및 실행
+
+EC2의 `.env`에는 다음처럼 연결 모드와 비밀 이름만 적고, `DB_PASSWORD`나 `SESSION_SECRET`은 적지 않습니다.
+
+```dotenv
+HOST=0.0.0.0
+PORT=3000
+SECRETS_MANAGER_SECRET_ID=whs-cloud9-vuln-web/prod
+DB_MODE=mysql
+DB_PORT=3306
+DB_SSL_CA=/opt/whs-cloud9/certs/global-bundle.pem
+STORAGE_MODE=s3
+AWS_REGION=ap-northeast-2
+S3_BUCKET=여기에-S3-버킷-이름
+S3_PREFIX=whs-uploads/
+```
+
+필요한 IAM 권한이 부여된 역할을 EC2에 연결한 뒤 `npm install`과 `npm start`를 실행합니다. Secrets Manager 비밀을 수정하거나 교체해도 실행 중인 프로세스는 시작 때 읽은 값을 계속 사용하므로 앱 프로세스를 재시작해야 새 값을 사용합니다. AWS가 관리하는 기본 Secrets Manager 암호화 키를 사용할 때는 서비스가 복호화를 처리하며, 고객 관리형 키 사용 시 `kms:Decrypt` 권한을 별도로 확인합니다. [Secrets Manager 암호화 공식 안내](https://docs.aws.amazon.com/secretsmanager/latest/userguide/security-encryption.html)
+
 ### S3 업로드
 
 업로드·목록·파일 읽기 코드는 `files.js`, 실행 코드는 `file-runner.js`입니다. EC2 IAM 역할을 사용하며 AWS 키를 코드에 넣지 않습니다. EC2에 S3 권한이 이미 있다면 `.env`에서 `STORAGE_MODE=s3`로 바꾸세요. 로컬 개발은 `STORAGE_MODE=local` 그대로 실행할 수 있습니다.
@@ -286,9 +282,9 @@ Private Subnet은 인터넷에서 EC2로 직접 들어오는 경로를 제한하
 - 설치: `npm ci`에도 패키지 저장소 접근 경로가 필요합니다. 외부 연결이 없다면 동일 OS/CPU 환경에서 준비한 배포 패키지를 반입하세요.
 - HTTPS ALB를 사용한다면 해당 ALB를 통해 접속하세요.
 
-## 실행 방식
+## 배포 후 확인
 
-개발 환경에서 `npm start`로 실행합니다. EC2에서도 같은 방식으로 실행하며 `.env`에 DB와 저장소 설정을 넣습니다.
+EC2에서 앱을 시작한 뒤 브라우저에서 가입·로그인, 파일 업로드·목록·실행을 차례로 확인하세요. `/api/health`는 앱의 설정 모드만 보여주며 RDS나 S3의 실제 연결 성공을 증명하지 않습니다.
 
 ### 자주 만나는 문제
 
@@ -312,8 +308,26 @@ Private Subnet은 인터넷에서 EC2로 직접 들어오는 경로를 제한하
 - 운영: `.env`는 Git에 포함하지 않습니다. `DB_MODE=mysql`이면 RDS 세션 저장소를 사용하고, `DB_MODE=sqlite`이면 세션이 메모리에 저장됩니다. RDS/S3에 접속할 수 있도록 EC2 네트워크 경로를 준비하세요.
 - 비용: S3/RDS/EC2/NAT 비용은 사용자의 구성에 따라 발생합니다. 실습 종료 후 자료 보관 기간과 리소스 정리를 관리하세요.
 
-`/api/health`는 앱 응답과 설정 모드를 보여주며 RDS/S3의 실제 연결 성공을 뜻하지 않습니다.
+## 화면 사용
 
+1. 첫 화면에서 이메일과 비밀번호로 가입한 다음 로그인합니다.
+2. 상단 네비게이션이나 첫 화면의 큰 버튼을 눌러 `파일 업로드`, `OS 명령`, `SSTI 실습`, `팀 프로필` 모달을 엽니다.
+3. 파일 모달에서 파일을 올리면 설정에 따라 S3 또는 로컬 폴더에 저장됩니다. 지원되는 `.js`, `.mjs`, `.cjs`, `.py`, `.sh` 파일은 목록에서 **실행**할 수 있습니다.
+4. OS 명령 모달은 입력한 명령을 서버에서 실행합니다. 팀 프로필은 서버가 입력한 URL에 요청해 이미지 정보를 가져옵니다.
+5. 오른쪽 위 로그아웃 버튼으로 세션을 종료합니다.
+
+각 기능은 취약점 실습용입니다. 업로드한 코드, OS 명령, SSTI 템플릿은 EC2의 앱 사용자 권한으로 실행됩니다. 테스트할 때는 출력 문구 확인처럼 영향이 작은 입력을 사용하세요.
+
+| API | 기능 |
+| --- | --- |
+| `POST /api/register` | 사용자 가입 |
+| `POST /api/login`, `POST /api/logout`, `GET /api/me` | 로그인, 로그아웃, 현재 사용자 확인 |
+| `POST /api/files`, `GET /api/files` | 파일 업로드와 현재 사용자 파일 목록 |
+| `POST /api/files/execute` | S3 또는 로컬에 저장된 지원 스크립트 실행 |
+| `POST /api/labs/os-command` | OS 명령 실습 |
+| `POST /api/labs/ssti` | EJS 템플릿 해석 실습 |
+| `POST /api/images/preview` | 서버가 URL에 요청해 이미지 미리보기 |
+| `POST /api/profile/image` | 미리 본 이미지를 계정 프로필로 저장 |
 
 ## 파일 업로드, 목록 보기, 실행
 
@@ -385,3 +399,27 @@ Python 파일은 EC2에 `python3`가 설치되어 있어야 실행됩니다. 각
 세 API 모두 로그인 세션이 필요합니다. `POST` 요청에는 `X-WHS-Request: 1` 헤더도 필요하며, 화면에서 사용하면 브라우저 코드가 자동으로 붙입니다. 다른 앱에서 직접 호출한다면 로그인 쿠키와 이 헤더를 함께 보내야 합니다.
 
 **Stateless 배포에서 중요한 점:** 파일 자체는 S3에, 계정과 로그인 세션은 RDS에 두면 여러 EC2가 같은 상태를 사용할 수 있습니다. `local` 저장은 EC2 디스크에 남으므로 이 방식에 해당하지 않습니다. S3·RDS 연결 여부는 `/api/health`의 모드 표시만으로 확인되지 않으니 실제 업로드, 목록, 실행, 재로그인 동작을 각각 확인해야 합니다.
+
+## SSTI 실습
+
+SSTI(Server-Side Template Injection, 서버 측 템플릿 삽입)는 사용자가 입력한 **글**을 서버가 **실행할 코드**로 해석하는 취약점입니다. 이 앱의 템플릿 도구는 EJS(HTML 등에 JavaScript 결과를 넣는 도구)입니다. [EJS 공식 설명](https://ejs.co/)의 표현처럼 EJS는 JavaScript를 실행합니다. 현재 [`server.js`](server.js)의 `/api/labs/ssti`는 사용자가 입력한 문자열 전체를 `ejs.render()`에 넘깁니다. 따라서 출력 문구만 바꾸는 것을 넘어 서버의 JavaScript 실행 권한을 사용할 수 있습니다.
+
+로컬 또는 **승인된 실습 EC2**에서 로그인한 뒤 상단 메뉴나 대시보드의 **SSTI 실습** 버튼을 누릅니다. 입력창에 아래 내용을 하나씩 넣고 **결과 보기**를 누르세요.
+
+1. `<%= 7 * 7 %>` → `49`가 나오면 입력이 템플릿 코드로 해석된 것입니다.
+2. `<%= process.version %>` → 서버의 Node.js 버전이 나오면 브라우저가 아니라 **서버의 JavaScript 실행 환경**에 접근한 것입니다.
+3. `<%= process.getBuiltinModule('child_process').execFileSync('whoami').toString().trim() %>` → 웹앱을 실행한 OS 계정 이름이 나오면 RCE(원격 코드 실행: 웹 요청으로 서버에서 코드를 실행함)를 확인한 것입니다. `whoami`는 현재 사용자 이름만 출력하며 파일이나 AWS 자원을 바꾸지 않습니다.
+
+이 실습은 **로그인한 사용자만** 호출할 수 있습니다. 템플릿 입력은 최대 2048자이지만, 길이 제한은 실행 권한을 제한하지 않습니다. 실습 EC2에 S3 또는 Secrets Manager 권한을 가진 IAM 역할(EC2가 AWS에 접근할 때 쓰는 권한)이 연결되어 있다면, 코드 실행자는 그 역할이 허용한 범위까지 접근할 수 있습니다. 실제 접근 범위는 배포 시 부여한 권한과 네트워크 설정을 따르며, 위 세 단계만으로 AWS 자원 접근을 검증한 것은 아닙니다. 실습에는 전용 EC2·가짜 데이터·최소 권한의 역할을 사용하세요. [OWASP SSTI 설명](https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/07-Injection/18-Server-side_Template_Injection/)
+
+같은 기능을 API로 직접 호출하려면 `POST /api/labs/ssti`에 `{ "template": "<%= 7 * 7 %>" }`를 보냅니다. 브라우저 개발자 도구의 콘솔에서는 로그인 상태에서 아래 예시를 실행할 수 있습니다.
+
+```js
+fetch('/api/labs/ssti', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-WHS-Request': '1' },
+  body: JSON.stringify({ template: '<%= 7 * 7 %>' })
+}).then(response => response.json()).then(console.log);
+```
+
+템플릿에는 로그인한 사용자의 `name`도 전달됩니다. 위 예시는 무해한 확인용이며, 실습 서버의 파일·비밀값을 실제로 열거나 외부로 전송하는 명령은 포함하지 않습니다.
