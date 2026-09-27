@@ -22,7 +22,8 @@ WHS-Cloud9-Vuln-Web/
 ├── secrets.js
 ├── database.js
 ├── schema.sql
-├── exercises.js
+├── login.js
+├── ssrf.js
 ├── image.js
 ├── command-lab.js
 ├── files.js
@@ -42,7 +43,8 @@ WHS-Cloud9-Vuln-Web/
 ```mermaid
 flowchart TD
   B[브라우저: public/index.html · app.js · style.css] -->|Express API| S[server.js]
-  S --> A[exercises.js: SQLi 로그인·SSRF 이미지]
+  S --> A[login.js: SQLi 로그인]
+  S --> B[ssrf.js: SSRF 이미지 요청]
   S --> C[command-lab.js: OS 명령 실습]
   S --> T[EJS: SSTI 템플릿 실행]
   S --> F[files.js: 업로드·목록]
@@ -65,7 +67,8 @@ flowchart TD
 | `public/style.css` | 화면 디자인과 모바일 크기 조정 |
 | `database.js` | RDS MySQL 연결 |
 | `schema.sql` | RDS에 `users`, `sessions` 테이블을 생성하는 SQL |
-| `exercises.js` | SQL Injection 로그인과 SSRF 이미지 요청 실습 |
+| `login.js` | SQL Injection 로그인 실습 |
+| `ssrf.js` | SSRF 이미지 요청 실습 |
 | `image.js` | 외부에서 가져온 이미지 형식을 확인 |
 | `secrets.js` | 설정된 경우 Secrets Manager에서 비밀값을 읽음 |
 | `command-lab.js` | OS 명령 실행 실습 |
@@ -74,6 +77,42 @@ flowchart TD
 | `.env` | DB, S3, 포트와 세션 키 등 실행 설정. 직접 만들며 Git에 올리지 않음 |
 
 사용자 계정과 로그인 세션은 RDS의 `users`, `sessions` 테이블에 저장하고 업로드 파일은 S3에 저장합니다. 따라서 여러 EC2 인스턴스가 같은 RDS와 S3를 사용하면 로그인과 파일 목록을 공유할 수 있습니다. 이처럼 장기 보관할 사용자 데이터를 서버별 로컬 디스크에 남기지 않는 구성을 stateless(서버 인스턴스가 바뀌어도 공유 저장소에서 같은 데이터를 읽는 방식)라고 합니다.
+
+### 데이터베이스 구조
+
+`schema.sql`이 `whs_cloud9` 데이터베이스와 아래 두 테이블을 생성합니다. `users`는 가입한 계정 정보를, `sessions`는 로그인 상태를 여러 EC2가 함께 확인할 수 있도록 저장합니다.
+
+```mermaid
+erDiagram
+  USERS {
+    char id PK "사용자 UUID"
+    varchar email UK "로그인 이메일"
+    varchar name "화면에 표시할 이름"
+    varchar password_hash "SHA-256 해시값"
+    mediumtext avatar "프로필 이미지 데이터, 선택"
+    timestamp created_at "가입 시각"
+  }
+  SESSIONS {
+    varchar session_id PK "세션 식별자"
+    bigint expires "만료 시각, Unix 밀리초"
+    mediumtext data "세션 내용(JSON)"
+  }
+  USERS ||--o{ SESSIONS : "앱 세션 데이터에서 사용자 ID 참조"
+```
+
+| 테이블 | 컬럼 | 용도 |
+| --- | --- | --- |
+| `users` | `id` | 사용자 UUID(중복되지 않는 계정 식별값). 파일 목록을 S3에서 사용자별로 구분할 때도 사용합니다. |
+| `users` | `email` | 로그인 이메일. 중복 가입을 막기 위해 `UNIQUE`(중복 불가) 제약이 있습니다. |
+| `users` | `name` | 화면에 표시하는 사용자 이름 |
+| `users` | `password_hash` | 입력한 비밀번호 자체가 아니라 SHA-256으로 계산한 해시값입니다. 현재 실습용 로그인 코드는 SQL Injection에 취약합니다. |
+| `users` | `avatar` | 선택한 프로필 이미지 데이터. 이미지를 URL로 미리보기 한 뒤 저장합니다. |
+| `users` | `created_at` | 계정이 생성된 시각. 기본값은 DB의 현재 시각입니다. |
+| `sessions` | `session_id` | 브라우저 로그인 세션의 식별값 |
+| `sessions` | `expires` | 세션 만료 시각(Unix 시간 밀리초). 이 값에 인덱스가 있어 만료 세션을 찾기 쉽습니다. |
+| `sessions` | `data` | Express가 만든 세션 정보를 JSON 문자열로 저장합니다. 로그인한 사용자 ID도 이 데이터에 들어갑니다. |
+
+`users.id`와 `sessions`는 DB 외래 키로 직접 연결되어 있지 않습니다. 세션의 `data`에 사용자 ID가 들어가고, 앱이 그 ID로 `users`에서 사용자를 찾습니다. 따라서 세션 행에는 비밀번호가 저장되지 않습니다. 비밀번호 해시는 `users.password_hash`에만 저장됩니다. S3에 저장한 업로드 파일의 실제 내용은 MySQL에 저장하지 않습니다.
 
 ## 로컬에서 실행하기
 
@@ -210,7 +249,7 @@ DELETE FROM whs_cloud9.sessions WHERE expires <= UNIX_TIMESTAMP(CURRENT_TIMESTAM
 
 이 앱의 RDS 연결은 [TLS 인증서로 서버를 확인하며 암호화](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.html)합니다. 접속이 안 되면 endpoint/비밀번호, EC2와 RDS의 VPC·보안 그룹, CA 파일 경로를 차례로 확인하세요.
 
-연결 코드는 `database.js`, 의도적으로 취약한 로그인 쿼리는 `exercises.js`입니다. MySQL 연결은 TLS(암호화 연결)를 검증합니다. 실습용 로그인 비밀번호는 SHA-256으로 저장합니다. 이는 운영용 비밀번호 저장 방식이 아닙니다. 이전 버전의 scrypt 계정은 이 버전과 호환되지 않으므로 별도의 실습 DB/계정을 사용하세요.
+연결 코드는 `database.js`, 의도적으로 취약한 로그인 쿼리는 `login.js`입니다. MySQL 연결은 TLS(암호화 연결)를 검증합니다. 실습용 로그인 비밀번호는 SHA-256으로 저장합니다. 이는 운영용 비밀번호 저장 방식이 아닙니다. 이전 버전의 scrypt 계정은 이 버전과 호환되지 않으므로 별도의 실습 DB/계정을 사용하세요.
 
 ### AWS Secrets Manager 연결
 
