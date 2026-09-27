@@ -32,13 +32,10 @@ WHS-Cloud9-Vuln-Web/
 │   ├── app.js
 │   ├── style.css
 │   └── whitehat-school-logo.png
-├── data/                 # 로컬 실행 시 생성되며 Git에는 포함되지 않음
-│   ├── users.sqlite
-│   └── uploads/
 └── node_modules/         # npm ci 실행 시 생성되며 Git에는 포함되지 않음
 ```
 
-`data/`는 `DB_MODE=sqlite` 또는 `STORAGE_MODE=local`로 실행할 때 앱이 만드는 로컬 저장 위치입니다. AWS 모드에서는 계정·세션을 RDS에, 업로드 파일을 S3에 저장합니다. `node_modules/`는 `npm ci`가 의존성(앱이 사용하는 라이브러리)을 설치하면서 만드는 폴더입니다.
+`node_modules/`는 `npm ci`가 의존성(앱이 사용하는 라이브러리)을 설치하면서 만드는 폴더입니다. 앱은 영구 데이터를 위해 `data/` 폴더를 만들지 않습니다. 업로드 스크립트를 실행하는 동안에는 OS 임시 폴더를 잠깐 사용한 뒤 파일을 삭제합니다.
 
 ### 앱과 저장소의 연결
 
@@ -49,12 +46,10 @@ flowchart TD
   S --> C[command-lab.js: OS 명령 실습]
   S --> T[EJS: SSTI 템플릿 실행]
   S --> F[files.js: 업로드·목록]
-  F -->|local| L[(data/uploads)]
-  F -->|s3| O[(Amazon S3)]
+  F -->|업로드 파일| O[(Amazon S3)]
   S --> R[file-runner.js: 선택한 파일 실행]
   S --> D[database.js]
-  D -->|sqlite| Q[(data/users.sqlite)]
-  D -->|MySQL 계정 + 로그인 세션| M[(RDS MySQL)]
+  D -->|계정 + 로그인 세션| M[(RDS MySQL)]
 ```
 
 ### 주요 파일의 역할
@@ -64,33 +59,36 @@ flowchart TD
 | `server.js` | Express 앱 시작, 로그인, 세션, API 경로 연결 |
 | `package.json`, `package-lock.json` | 앱 실행 명령과 설치할 라이브러리 목록·버전 기록 |
 | `.env.example` | 로컬 설정을 시작할 때 복사하는 환경변수 예시 |
-| `.gitignore` | `.env`, `data/`, `node_modules/`가 Git에 올라가지 않게 제외 |
+| `.gitignore` | `.env`와 `node_modules/`가 Git에 올라가지 않게 제외 |
 | `public/index.html` | 로그인 화면, 인덱스, 네비게이션과 모달의 HTML |
 | `public/app.js` | 브라우저 동작: 로그인 요청, 버튼·모달, 파일 업로드와 API 호출 |
 | `public/style.css` | 화면 디자인과 모바일 크기 조정 |
-| `database.js` | SQLite 또는 RDS MySQL 연결 |
+| `database.js` | RDS MySQL 연결 |
 | `schema.sql` | RDS에 `users`, `sessions` 테이블을 생성하는 SQL |
 | `exercises.js` | SQL Injection 로그인과 SSRF 이미지 요청 실습 |
 | `image.js` | 외부에서 가져온 이미지 형식을 확인 |
 | `secrets.js` | 설정된 경우 Secrets Manager에서 비밀값을 읽음 |
 | `command-lab.js` | OS 명령 실행 실습 |
-| `files.js` | 파일 업로드, 사용자별 목록 조회, S3/로컬 저장 |
+| `files.js` | 파일 업로드, 사용자별 목록 조회, S3 저장 |
 | `file-runner.js` | 저장된 스크립트를 서버에서 실행하고 결과 반환 |
 | `.env` | DB, S3, 포트와 세션 키 등 실행 설정. 직접 만들며 Git에 올리지 않음 |
 
-SQLite 모드에서는 로그인 세션이 메모리에 있어 서버 재시작 시 로그아웃됩니다. MySQL 모드에서는 로그인 세션도 RDS의 `sessions` 테이블에 저장하므로 여러 EC2 인스턴스가 공유할 수 있습니다. 이 앱에서 EC2 웹 서버 계층은 stateless(어느 EC2가 요청을 받아도 같은 공유 DB/S3 상태를 사용)하게 동작합니다.
+사용자 계정과 로그인 세션은 RDS의 `users`, `sessions` 테이블에 저장하고 업로드 파일은 S3에 저장합니다. 따라서 여러 EC2 인스턴스가 같은 RDS와 S3를 사용하면 로그인과 파일 목록을 공유할 수 있습니다. 이처럼 장기 보관할 사용자 데이터를 서버별 로컬 디스크에 남기지 않는 구성을 stateless(서버 인스턴스가 바뀌어도 공유 저장소에서 같은 데이터를 읽는 방식)라고 합니다.
 
-## 로컬에서 시작하기
+## 로컬에서 실행하기
 
-Linux EC2 또는 macOS, Node.js **22.13 이상**이 필요합니다. Windows의 명령 실행은 지원하지 않습니다.
+로컬에서 실행해도 데이터 저장소는 RDS MySQL과 S3를 사용합니다. 따라서 RDS, S3, Secrets Manager(사용하는 경우)에 연결할 수 있는 네트워크와 AWS 자격 증명이 필요합니다. Node.js **22.13 이상**을 설치하세요. Windows의 OS 명령 실습은 지원하지 않습니다.
+
+1. 프로젝트 폴더에서 `.env.example`을 복사해 `.env`를 만듭니다.
+2. RDS endpoint, DB 이름, 앱 계정, RDS 인증서 파일 경로, S3 버킷과 리전을 설정합니다. Secrets Manager를 쓰면 `SECRETS_MANAGER_SECRET_ID`를 설정하고, 로컬 AWS 자격 증명도 준비합니다.
+3. 터미널에서 다음 명령을 실행합니다.
 
 ```sh
 npm ci
-cp .env.example .env
 npm start
 ```
 
-http://127.0.0.1:3000 에 접속해 먼저 회원가입하세요. 기본 계정은 없습니다. RDS 연결 전에는 `DB_MODE=sqlite`로 `data/users.sqlite` 파일에 계정을 저장합니다. 재시작해도 계정·프로필·업로드 파일은 남고 로그인 세션만 사라집니다.
+브라우저에서 http://127.0.0.1:3000 에 접속해 회원가입하세요. RDS 설정이나 S3 버킷 이름이 빠지면 앱이 시작되지 않습니다. 네트워크나 IAM 권한 문제는 실제 DB 요청 또는 파일 기능을 시험해 확인하세요.
 
 ## AWS 배포 설정
 
@@ -101,17 +99,15 @@ HOST=0.0.0.0
 PORT=3000
 SECRETS_MANAGER_SECRET_ID=whs-cloud9-vuln-web/prod
 
-DB_MODE=mysql
 DB_PORT=3306
 DB_SSL_CA=/opt/whs-cloud9/certs/global-bundle.pem
 
-STORAGE_MODE=s3
 AWS_REGION=ap-northeast-2
 S3_BUCKET=whs-cloud9-vuln-web-lab-896986966760-ap-northeast-2-an
 S3_PREFIX=whs-uploads/
 ```
 
-아직 RDS/S3를 연결하지 않았다면 `DB_MODE=sqlite`, `STORAGE_MODE=local`을 유지하면 됩니다. SQLite 계정은 MySQL로 자동 이동하지 않습니다. RDS로 전환한 후 새 실습 계정을 가입하세요.
+이 앱은 RDS MySQL과 S3를 필수로 사용합니다. RDS 설정이 빠지면 앱이 시작되지 않고, S3 버킷이나 권한에 문제가 있으면 파일 기능이 실패합니다. 서버 디스크에 영구 저장하는 대체 경로는 없습니다.
 
 ### 환경변수 뜻
 
@@ -121,13 +117,11 @@ S3_PREFIX=whs-uploads/
 | `PORT` | Express 앱의 포트 | `3000` |
 | `SECRETS_MANAGER_SECRET_ID` | EC2에서 읽을 Secrets Manager 비밀 이름 또는 ARN. 설정하면 DB 접속값과 세션 키를 이곳에서 읽음 | `whs-cloud9-vuln-web/prod` |
 | `SESSION_SECRET` | 로컬 실행 때 쓰는 로그인 쿠키 서명 키. EC2는 Secrets Manager에 저장 | 무작위 문자열 |
-| `DB_MODE` | 계정 정보를 저장할 DB 선택 | `sqlite` 또는 `mysql` |
 | `DB_HOST`, `DB_PORT` | RDS 접속 주소와 포트 | RDS endpoint, `3306` |
 | `DB_NAME` | 사용할 DB 이름 | `whs_cloud9` |
 | `DB_USER`, `DB_PASSWORD` | 로컬 실행 때 쓰는 앱 전용 MySQL 계정 값. EC2에서는 Secrets Manager에 저장 | `whs_app`, 앱 계정 비밀번호 |
 | `DB_SSL_CA` | RDS 서버 인증서 묶음 파일의 EC2 내 경로 | `/opt/whs-cloud9/certs/global-bundle.pem` |
-| `STORAGE_MODE` | 업로드 파일 저장 위치 | `local` 또는 `s3` |
-| `AWS_REGION`, `S3_BUCKET` | S3 모드에서 사용할 리전과 버킷 | `ap-northeast-2`, 버킷 이름 |
+| `AWS_REGION`, `S3_BUCKET` | 사용할 S3 리전과 버킷 | `ap-northeast-2`, 버킷 이름 |
 | `S3_PREFIX` | 버킷 안의 앱 파일 경로 | `whs-uploads/` |
 
 `.env.example`을 복사해 `.env`를 만들고 실제 값만 채웁니다. `.env`는 비밀번호와 세션 키가 있어 외부에 공유하거나 Git에 올리면 안 됩니다.
@@ -182,10 +176,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON whs_cloud9.sessions TO 'whs_app'@'%';
 
 #### 4. EC2에서 앱 설정
 
-Secrets Manager를 쓰지 않는 로컬/수동 설정에서는 프로젝트 `.env`에 RDS endpoint, DB 이름과 앱 계정을 설정합니다. AWS 배포에서는 아래의 Secrets Manager 연결 절차에서 민감값을 저장합니다. `DB_SSL_CA`는 인증서 파일의 실제 경로여야 합니다.
+Secrets Manager를 사용하지 않고 로컬에서 실행하거나 환경변수를 직접 설정한다면 `.env`에 RDS endpoint, DB 이름과 앱 계정을 설정합니다. AWS 배포에서는 아래 Secrets Manager 연결 절차에 따라 민감한 값을 저장합니다. `DB_SSL_CA`는 인증서 파일의 실제 경로여야 합니다.
 
 ```dotenv
-DB_MODE=mysql
 DB_HOST=RDS_ENDPOINT
 DB_PORT=3306
 DB_NAME=whs_cloud9
@@ -199,7 +192,7 @@ DB_SSL_CA=/opt/whs-cloud9/certs/global-bundle.pem
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-여러 EC2를 사용할 때는 **모든 EC2가 같은 Secrets Manager 비밀을 읽도록** 해야 로그인 쿠키를 서로 확인할 수 있습니다. 아직 RDS를 연결하지 않았다면 `DB_MODE=sqlite`를 유지하세요. 서버를 `npm start`로 재시작하면 MySQL 모드에서 사용자 데이터와 세션이 RDS를 사용합니다. 기존 SQLite 사용자는 자동 복사되지 않으므로 RDS 전환 후 새로 가입해야 합니다.
+여러 EC2를 사용할 때는 **모든 EC2가 같은 Secrets Manager 비밀을 읽도록** 해야 로그인 쿠키를 서로 확인할 수 있습니다. 서버를 `npm start`로 실행하면 사용자 데이터와 세션은 항상 RDS를 사용합니다.
 
 #### 5. 연결 확인
 
@@ -253,10 +246,8 @@ EC2의 `.env`에는 다음처럼 연결 모드와 비밀 이름만 적고, `DB_P
 HOST=0.0.0.0
 PORT=3000
 SECRETS_MANAGER_SECRET_ID=whs-cloud9-vuln-web/prod
-DB_MODE=mysql
 DB_PORT=3306
 DB_SSL_CA=/opt/whs-cloud9/certs/global-bundle.pem
-STORAGE_MODE=s3
 AWS_REGION=ap-northeast-2
 S3_BUCKET=여기에-S3-버킷-이름
 S3_PREFIX=whs-uploads/
@@ -266,11 +257,11 @@ S3_PREFIX=whs-uploads/
 
 ### S3 업로드
 
-업로드·목록·파일 읽기 코드는 `files.js`, 실행 코드는 `file-runner.js`입니다. EC2 IAM 역할을 사용하며 AWS 키를 코드에 넣지 않습니다. EC2에 S3 권한이 이미 있다면 `.env`에서 `STORAGE_MODE=s3`로 바꾸세요. 로컬 개발은 `STORAGE_MODE=local` 그대로 실행할 수 있습니다.
+업로드·목록·파일 읽기 코드는 `files.js`, 실행 코드는 `file-runner.js`입니다. 업로드 파일은 항상 S3에 저장합니다. EC2에서는 인스턴스 IAM 역할을 사용하고 AWS 키를 코드에 넣지 않습니다. 로컬 개발에서는 AWS 자격 증명으로 S3 접근 권한을 준비해야 합니다.
 
 S3는 실제 폴더를 만들지 않고 파일 이름 앞에 경로를 붙여 폴더처럼 보이게 합니다. 앱은 `whs-uploads/<사용자 UUID>/<무작위 UUID>--<인코딩된 원본 파일명>` 형식으로 저장합니다. 예: `whs-uploads/7c7087fe-378a-469a-a2bb-de95e08349b3/3e...--hello.js`. 사전에 디렉터리나 객체를 만들 필요가 없습니다. 이 경로 구성이면 사용자별 목록 조회도 분리됩니다.
 
-S3 퍼블릭 액세스 차단을 유지하세요. 서버가 업로드하므로 버킷 CORS 설정은 필요하지 않습니다. 고객 관리형 KMS 키를 쓰는 버킷은 해당 키 권한도 필요합니다. S3 오류 시 로컬 저장으로 바꾸거나 성공으로 표시하지 않습니다. 업로드 직후에는 저장만 합니다. 목록에서 실행 버튼을 눌렀을 때 서버가 파일을 가져와 실행합니다. 파일을 공개 URL로 제공하지 않습니다. 버킷의 고객 관리형 KMS 키로 암호화된 파일을 읽으려면 kms:Decrypt 권한도 필요합니다.
+S3 퍼블릭 액세스 차단을 유지하세요. 서버가 업로드하므로 버킷 CORS 설정은 필요하지 않습니다. 고객 관리형 KMS 키를 쓰는 버킷은 해당 키 권한도 필요합니다. S3 오류가 나면 업로드나 파일 목록 요청이 실패합니다. 업로드 직후에는 저장만 합니다. 목록에서 실행 버튼을 눌렀을 때 서버가 파일을 가져와 실행합니다. 파일을 공개 URL로 제공하지 않습니다. 버킷의 고객 관리형 KMS 키로 암호화된 파일을 읽으려면 kms:Decrypt 권한도 필요합니다.
 
 ## Private Subnet에서의 연결
 
@@ -290,14 +281,14 @@ EC2에서 앱을 시작한 뒤 브라우저에서 가입·로그인, 파일 업�
 
 | 증상 | 먼저 확인할 것 |
 | --- | --- |
-| `DB_HOST` 또는 `DB_SSL_CA 설정이 필요합니다` | `.env`가 앱 폴더에 있는지, `DB_MODE=mysql`일 때 필요한 값이 채워졌는지 확인 |
+| `DB_HOST` 또는 `DB_SSL_CA 설정이 필요합니다` | `.env` 또는 서비스 환경변수에 RDS 연결 값이 있는지 확인 |
 | `ETIMEDOUT`, 연결 시간 초과 | RDS가 `Available`인지, EC2와 RDS가 연결된 VPC인지, RDS 보안 그룹 3306 출발지가 EC2 보안 그룹인지 확인 |
 | 인증서 오류 | `DB_SSL_CA` 파일 경로와 PEM 인증서 파일을 확인 |
 | `Access denied for user` | 앱 DB 사용자·비밀번호 및 `whs_cloud9.users`, `whs_cloud9.sessions` 권한 확인 |
 | `Table ... doesn't exist` | 관리자 계정으로 `schema.sql`을 실행했는지 확인 |
-| S3 `AccessDenied` | EC2 IAM 역할과 `STORAGE_MODE=s3`, 버킷 이름·리전을 확인 |
-| 업로드 파일 목록이 비어 있음 | 현재 로그인 계정의 파일만 보이는지, S3 모드와 버킷 prefix가 맞는지 확인 |
-| 서버 재시작 후 로그아웃됨 | `DB_MODE=mysql`인지 확인. SQLite 모드는 세션이 메모리에만 저장됨 |
+| S3 `AccessDenied` | EC2 IAM 역할의 S3 권한, 버킷 이름과 리전을 확인 |
+| 업로드 파일 목록이 비어 있음 | 현재 로그인 계정인지, S3 버킷과 prefix가 맞는지 확인 |
+| 여러 EC2에서 로그인 유지 안 됨 | 모든 인스턴스가 같은 RDS와 `SESSION_SECRET`을 사용하는지 확인 |
 
 ## AWS Well-Architected 관점의 적용 범위
 
@@ -305,14 +296,14 @@ EC2에서 앱을 시작한 뒤 브라우저에서 가입·로그인, 파일 업�
 
 - 보안: 일반 OS 계정으로 실행하고, 필요한 실습 자원만 접근하게 합니다.
 - 안정성: 파일/이미지 5MB, OS 실행 8초·출력 32KB·동시 1건을 제한합니다. 이 제한은 보안 격리를 보장하지 않습니다.
-- 운영: `.env`는 Git에 포함하지 않습니다. `DB_MODE=mysql`이면 RDS 세션 저장소를 사용하고, `DB_MODE=sqlite`이면 세션이 메모리에 저장됩니다. RDS/S3에 접속할 수 있도록 EC2 네트워크 경로를 준비하세요.
+- 운영: `.env`는 Git에 포함하지 않습니다. 계정과 세션은 RDS에, 업로드 파일은 S3에 둡니다. EC2에서 두 서비스로 연결되는 네트워크 경로를 준비하세요.
 - 비용: S3/RDS/EC2/NAT 비용은 사용자의 구성에 따라 발생합니다. 실습 종료 후 자료 보관 기간과 리소스 정리를 관리하세요.
 
 ## 화면 사용
 
 1. 첫 화면에서 이메일과 비밀번호로 가입한 다음 로그인합니다.
 2. 상단 네비게이션이나 첫 화면의 큰 버튼을 눌러 `파일 업로드`, `OS 명령`, `SSTI 실습`, `팀 프로필` 모달을 엽니다.
-3. 파일 모달에서 파일을 올리면 설정에 따라 S3 또는 로컬 폴더에 저장됩니다. 지원되는 `.js`, `.mjs`, `.cjs`, `.py`, `.sh` 파일은 목록에서 **실행**할 수 있습니다.
+3. 파일 모달에서 파일을 올리면 S3 버킷에 저장됩니다. 지원되는 `.js`, `.mjs`, `.cjs`, `.py`, `.sh` 파일은 목록에서 **실행**할 수 있습니다.
 4. OS 명령 모달은 입력한 명령을 서버에서 실행합니다. 팀 프로필은 서버가 입력한 URL에 요청해 이미지 정보를 가져옵니다.
 5. 오른쪽 위 로그아웃 버튼으로 세션을 종료합니다.
 
@@ -323,7 +314,7 @@ EC2에서 앱을 시작한 뒤 브라우저에서 가입·로그인, 파일 업�
 | `POST /api/register` | 사용자 가입 |
 | `POST /api/login`, `POST /api/logout`, `GET /api/me` | 로그인, 로그아웃, 현재 사용자 확인 |
 | `POST /api/files`, `GET /api/files` | 파일 업로드와 현재 사용자 파일 목록 |
-| `POST /api/files/execute` | S3 또는 로컬에 저장된 지원 스크립트 실행 |
+| `POST /api/files/execute` | S3에 저장된 지원 스크립트 실행 |
 | `POST /api/labs/os-command` | OS 명령 실습 |
 | `POST /api/labs/ssti` | EJS 템플릿 해석 실습 |
 | `POST /api/images/preview` | 서버가 URL에 요청해 이미지 미리보기 |
@@ -360,16 +351,11 @@ EC2에서 앱을 시작한 뒤 브라우저에서 가입·로그인, 파일 업�
 
 ### 파일이 저장되는 위치
 
-`.env`의 `STORAGE_MODE` 값으로 저장 위치를 고릅니다.
-
-| 설정 | 저장 위치 | 서버 재시작·다른 EC2에서 보이는가 |
-| --- | --- | --- |
-| `STORAGE_MODE=local` | 앱 폴더의 `data/uploads/<사용자 UUID>/` | 같은 디스크에서는 남지만, 디스크가 다른 EC2와 공유되지 않습니다. |
-| `STORAGE_MODE=s3` | S3 버킷의 `<S3_PREFIX>/<사용자 UUID>/` 경로 | 같은 버킷·prefix를 쓰는 EC2끼리 파일을 공유합니다. |
+파일은 항상 S3 버킷의 `<S3_PREFIX>/<사용자 UUID>/` 경로에 저장됩니다. 서버 로컬 디스크에는 업로드 파일을 보관하지 않습니다. 같은 버킷과 prefix를 사용하는 EC2 인스턴스들은 파일 목록을 공유합니다.
 
 S3에는 실제 폴더 대신 객체 키(파일의 전체 경로 이름)가 저장됩니다. 예를 들어 `whs-uploads/사용자 UUID/무작위 ID--hello.js` 같은 이름입니다. S3 콘솔에서는 이 키를 폴더처럼 나눠 보여줍니다. `S3_PREFIX`의 기본값은 `whs-uploads/`입니다.
 
-앱은 로그인 세션에서 현재 사용자 UUID를 확인한 뒤 그 UUID 경로의 파일만 목록에 보여줍니다. 실행 요청에 파일 키를 넣더라도 서버가 현재 사용자의 경로인지 다시 확인합니다. 따라서 다른 사용자의 UUID 경로에 있는 파일을 임의로 지정해 실행할 수 없습니다. S3 모드에서는 EC2 역할에 앱 prefix 범위의 업로드(`PutObject`), 목록 확인(`ListBucket`), 실행할 파일 읽기(`GetObject`) 권한이 필요합니다. 앱은 파일을 공개 URL로 만들지 않으며, 버킷의 퍼블릭 액세스 차단을 유지하세요.
+앱은 로그인 세션에서 현재 사용자 UUID를 확인한 뒤 그 UUID 경로의 파일만 목록에 보여줍니다. 실행 요청에 파일 키를 넣더라도 서버가 현재 사용자의 경로인지 다시 확인합니다. 따라서 다른 사용자의 UUID 경로에 있는 파일을 임의로 지정해 실행할 수 없습니다. EC2 역할에는 앱 prefix 범위의 업로드(`PutObject`), 목록 확인(`ListBucket`), 실행할 파일 읽기(`GetObject`) 권한이 필요합니다. 앱은 파일을 공개 URL로 만들지 않으며, 버킷의 퍼블릭 액세스 차단을 유지하세요.
 
 ### 실행할 때 서버에서 일어나는 일
 
@@ -377,7 +363,7 @@ S3에는 실제 폴더 대신 객체 키(파일의 전체 경로 이름)가 저�
 브라우저의 실행 버튼
   → POST /api/files/execute로 파일 key 전송
   → 서버가 로그인한 사용자와 key 소유 경로 확인
-  → S3 또는 로컬 저장소에서 파일 읽기
+  → S3에서 파일 읽기
   → OS 임시 폴더에 복사
   → 확장자에 맞는 프로그램으로 실행
   → 출력과 종료 코드를 브라우저에 표시
@@ -398,13 +384,13 @@ Python 파일은 EC2에 `python3`가 설치되어 있어야 실행됩니다. 각
 
 세 API 모두 로그인 세션이 필요합니다. `POST` 요청에는 `X-WHS-Request: 1` 헤더도 필요하며, 화면에서 사용하면 브라우저 코드가 자동으로 붙입니다. 다른 앱에서 직접 호출한다면 로그인 쿠키와 이 헤더를 함께 보내야 합니다.
 
-**Stateless 배포에서 중요한 점:** 파일 자체는 S3에, 계정과 로그인 세션은 RDS에 두면 여러 EC2가 같은 상태를 사용할 수 있습니다. `local` 저장은 EC2 디스크에 남으므로 이 방식에 해당하지 않습니다. S3·RDS 연결 여부는 `/api/health`의 모드 표시만으로 확인되지 않으니 실제 업로드, 목록, 실행, 재로그인 동작을 각각 확인해야 합니다.
+**Stateless 배포에서 중요한 점:** 계정과 로그인 세션은 RDS에, 파일은 S3에 저장합니다. 따라서 EC2가 교체되거나 다른 인스턴스가 요청을 처리해도 같은 데이터를 사용할 수 있습니다. `/api/health`는 설정된 저장소 종류만 보여주므로 실제 업로드, 목록, 실행, 재로그인으로 연결을 확인하세요.
 
 ## SSTI 실습
 
 SSTI(Server-Side Template Injection, 서버 측 템플릿 삽입)는 사용자가 입력한 **글**을 서버가 **실행할 코드**로 해석하는 취약점입니다. 이 앱의 템플릿 도구는 EJS(HTML 등에 JavaScript 결과를 넣는 도구)입니다. [EJS 공식 설명](https://ejs.co/)의 표현처럼 EJS는 JavaScript를 실행합니다. 현재 [`server.js`](server.js)의 `/api/labs/ssti`는 사용자가 입력한 문자열 전체를 `ejs.render()`에 넘깁니다. 따라서 출력 문구만 바꾸는 것을 넘어 서버의 JavaScript 실행 권한을 사용할 수 있습니다.
 
-로컬 또는 **승인된 실습 EC2**에서 로그인한 뒤 상단 메뉴나 대시보드의 **SSTI 실습** 버튼을 누릅니다. 입력창에 아래 내용을 하나씩 넣고 **결과 보기**를 누르세요.
+RDS와 S3에 연결된 개발 환경 또는 **승인된 실습 EC2**에서 로그인한 뒤 상단 메뉴나 대시보드의 **SSTI 실습** 버튼을 누릅니다. 입력창에 아래 내용을 하나씩 넣고 **결과 보기**를 누르세요.
 
 1. `<%= 7 * 7 %>` → `49`가 나오면 입력이 템플릿 코드로 해석된 것입니다.
 2. `<%= process.version %>` → 서버의 Node.js 버전이 나오면 브라우저가 아니라 **서버의 JavaScript 실행 환경**에 접근한 것입니다.

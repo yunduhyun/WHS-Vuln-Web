@@ -16,14 +16,11 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const limit = 5 * 1024 * 1024;
 await loadSecrets();
 if (!process.env.SESSION_SECRET) throw new Error('SESSION_SECRET 또는 SECRETS_MANAGER_SECRET_ID 설정이 필요합니다.');
-const dbMode = process.env.DB_MODE || 'sqlite';
-const storageMode = process.env.STORAGE_MODE || 'local';
-if (!['local', 's3'].includes(storageMode)) throw new Error('STORAGE_MODE는 local 또는 s3입니다.');
-if (storageMode === 's3' && !process.env.S3_BUCKET) throw new Error('S3_BUCKET이 필요합니다.');
+if (!process.env.S3_BUCKET) throw new Error('S3_BUCKET 설정이 필요합니다.');
 
 const db = await openDatabase();
-const s3 = storageMode === 's3' ? new S3Client({ region: process.env.AWS_REGION || 'ap-northeast-2' }) : null;
-const files = createFileStore({ s3, bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX || 'whs-uploads/', directory: path.join(root, 'data', 'uploads') });
+const s3 = new S3Client({ region: process.env.AWS_REGION || 'ap-northeast-2' });
+const files = createFileStore({ s3, bucket: process.env.S3_BUCKET, prefix: process.env.S3_PREFIX || 'whs-uploads/' });
 class MysqlSessionStore extends session.Store {
   constructor(pool) { super(); this.pool = pool; }
   get(id, callback) {
@@ -43,7 +40,7 @@ class MysqlSessionStore extends session.Store {
     this.pool.execute('DELETE FROM sessions WHERE session_id = ?', [id]).then(() => callback(null), callback);
   }
 }
-const sessionStore = dbMode === 'mysql' ? new MysqlSessionStore(db) : undefined;
+const sessionStore = new MysqlSessionStore(db);
 async function findUser(column, value) {
   const [rows] = await db.execute(`SELECT * FROM users WHERE ${column === 'id' ? 'id' : 'email'} = ?`, [value]);
   return rows[0];
@@ -63,7 +60,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '8kb' }));
 app.use(session({ secret: process.env.SESSION_SECRET, resave: false, saveUninitialized: false, store: sessionStore,
   cookie: { maxAge: 3600000 } }));
-app.get('/api/health', (req, res) => res.json({ ok: true, database: dbMode, storage: storageMode, vulnerableLab: true, commandLab: true }));
+app.get('/api/health', (req, res) => res.json({ ok: true, database: 'mysql', storage: 's3', vulnerableLab: true, commandLab: true }));
 app.get('/api/me', async (req, res) => {
   const user = req.session.userId ? await findUser('id', req.session.userId) : null;
   res.json({ user: user ? publicUser(user) : null });
@@ -117,10 +114,10 @@ app.post('/api/labs/ssti', (req, res) => {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: limit, files: 1, fields: 0 } });
 app.post('/api/files', upload.single('file'), async (req, res) => {
   if (!req.file) throw fail(400, '파일을 선택하세요.');
-  res.status(201).json({ ...await files.save(req.user.id, req.file), storage: storageMode });
+  res.status(201).json(await files.save(req.user.id, req.file));
 });
 app.get('/api/files', async (req, res) => {
-  res.json({ ...await files.list(req.user.id, req.query.cursor), storage: storageMode });
+  res.json(await files.list(req.user.id, req.query.cursor));
 });
 app.post('/api/files/execute', async (req, res) => {
   const file = await files.readExecutable(req.user.id, req.body?.key);
@@ -142,12 +139,12 @@ app.post('/api/profile/image', async (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: '없는 API입니다.' }));
 app.use(express.static(path.join(root, 'public')));
 app.use((error, req, res, next) => {
-  if (error.code === 'ER_DUP_ENTRY' || error.message?.includes('UNIQUE constraint failed: users.email')) return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
+  if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
   const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : error instanceof multer.MulterError ? 400 : error.status || 500;
   if (status >= 500) console.error(JSON.stringify({ event: 'request_error', path: req.path, code: error.code || error.name }));
   res.status(status).json({ error: error.code === 'LIMIT_FILE_SIZE' ? '파일은 최대 5MB입니다.' : status >= 500 ? '처리하지 못했습니다. 서버 설정과 연결 상태를 확인하세요.' : error.message });
 });
 const server = app.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1', (error) => {
   if (error) { console.error('서버 실행 실패:', error.code); process.exit(1); }
-  console.log(`WHS-Cloud9-Vuln-Web: http://${process.env.HOST || '127.0.0.1'}:${server.address().port} (DB: ${dbMode}, storage: ${storageMode})`);
+  console.log(`WHS-Cloud9-Vuln-Web: http://${process.env.HOST || '127.0.0.1'}:${server.address().port} (RDS MySQL, S3)`);
 });

@@ -143,7 +143,7 @@ async function loadFiles(more = false) {
       li.append(label, button); $('#uploads').append(li);
     }
     filesCursor = result.nextCursor; $('#more-files').hidden = !filesCursor;
-    $('#files-status').textContent = $('#uploads').children.length ? `${result.storage === 's3' ? 'S3' : '로컬'} · ${$('#uploads').children.length}개 표시` : '아직 업로드한 파일이 없습니다.';
+    $('#files-status').textContent = $('#uploads').children.length ? `S3 · ${$('#uploads').children.length}개 표시` : '아직 업로드한 파일이 없습니다.';
   } catch (error) {
     if (version === filesVersion) $('#files-status').textContent = '목록을 불러오지 못했습니다. 새로고침을 눌러 다시 시도하세요.';
     throw error;
@@ -200,8 +200,8 @@ $('#ssti-form').onsubmit = event => {
   });
 };
 Promise.all([api('/api/health'), api('/api/me')]).then(([health, session]) => {
-  $('#storage-label').textContent = health.storage === 's3' ? '저장 위치 · Amazon S3' : '저장 위치 · 로컬 실습 폴더';
-  $('#mode-label').textContent = health.vulnerableLab ? 'WHS · SECURITY PRACTICE' : `계정: ${health.database === 'mysql' ? 'MySQL 모드' : 'SQLite 모드'} · 파일: ${health.storage === 's3' ? 'S3 모드' : '로컬 모드'}`;
+  $('#storage-label').textContent = '저장 위치 · Amazon S3';
+  $('#mode-label').textContent = 'WHS · SECURITY PRACTICE';
   commandLabEnabled = health.commandLab;
   displayUser(session.user);
 }).catch(error => notify(error.message, true));
