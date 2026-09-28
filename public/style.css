@@ -217,3 +217,30 @@ footer span:first-child { color: var(--brown); font-weight: 800; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* 파일명은 줄바꿈을 허용하고, 실행과 삭제 버튼은 나란히 표시합니다. */
+.file-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+.users-table th, .users-table td {
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.users-table th {
+  color: var(--brown);
+}
+@media (max-width: 480px) {
+  .uploads .file-row {
+    flex-wrap: wrap;
+  }
+}

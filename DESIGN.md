@@ -90,3 +90,8 @@ Use brief color changes for hover feedback only. Respect reduced motion; animati
 - **Do:** Give Korean headings decisive weight and keep explanatory text calmer.
 - **Don't:** Put a gradient, oversized shadow, or decorative badge on every component.
 - **Don't:** Make every sentence bold; use type scale and spacing to establish hierarchy.
+
+
+## Member list and file deletion
+
+The member menu uses the existing feature dialog, notification helper, and refresh action. Show only name and join date, formatted in Korean with Asia/Seoul time. Keep loading, empty, and retry states in the status region. File deletion reuses the secondary button beside execution, confirms the filename with the native confirmation dialog, and refreshes the list only after success. Ownership is enforced by the server session and S3 user prefix.

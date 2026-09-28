@@ -9,8 +9,8 @@ function notify(message, error = false) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { $('#notice').hidden = true; }, 6000);
 }
-async function api(url, body) {
-  const options = body === undefined ? {} : { method: 'POST', headers: { 'X-WHS-Request': '1' } };
+async function api(url, body, method = 'POST') {
+  const options = body === undefined ? {} : { method, headers: { 'X-WHS-Request': '1' } };
   if (body instanceof FormData) options.body = body;
   else if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   const response = await fetch(url, options);
@@ -26,7 +26,7 @@ function avatar(image) {
 }
 let currentUser = null;
 const dialog = $('#feature-dialog');
-const headings = { files: ['파일 업로드', '팀의 파일을 한곳에 보관하세요.'], os: ['OS 명령어', '서버에서 문구를 처리하고 결과를 확인하세요.'], ssti: ['SSTI 실습', '입력한 템플릿을 서버에서 해석합니다.'], profile: ['팀 프로필', 'URL로 이미지를 가져와 프로필을 변경하세요.'] };
+const headings = { users: ['가입 사용자', '함께 실습하는 팀원의 이름과 가입일을 확인하세요.'], files: ['파일 업로드', '팀의 파일을 한곳에 보관하세요.'], os: ['OS 명령어', '서버에서 문구를 처리하고 결과를 확인하세요.'], ssti: ['SSTI 실습', '입력한 템플릿을 서버에서 해석합니다.'], profile: ['팀 프로필', 'URL로 이미지를 가져와 프로필을 변경하세요.'] };
 function openFeature(page) {
   if (!currentUser || !headings[page]) return;
   for (const name of Object.keys(headings)) $(`#page-${name}`).hidden = name !== page;
@@ -36,6 +36,7 @@ function openFeature(page) {
   dialog.append($('#notice'));
   document.body.classList.add('modal-open');
   if (!dialog.open) dialog.showModal();
+  if (page === 'users') loadUsers().catch(error => notify(error.message, true));
   if (page === 'files') loadFiles().catch(error => notify(error.message, true));
 }
 function closeFeature() { if (dialog.open) dialog.close(); }
@@ -78,6 +79,8 @@ function displayUser(user) {
   $('#fetch-panel').hidden = true;
   $('#fetch-output').textContent = '';
   $('#preview').removeAttribute('src');
+  $('#users-list').replaceChildren();
+  $('#users-status').textContent = '';
   $('#uploads').replaceChildren();
   $('#file-result').hidden = true;
   $('#file-result').textContent = '';
@@ -140,7 +143,27 @@ async function loadFiles(more = false) {
           $('#file-result').textContent = `${output.name} · 종료 코드 ${output.exitCode} · ${output.durationMs}ms\n\n${output.stdout || '(표준 출력 없음)'}${output.stderr ? '\n[오류 출력]\n' + output.stderr : ''}`;
         } catch (error) { $('#file-result').textContent = error.message; throw error; }
       });
-      li.append(label, button); $('#uploads').append(li);
+      const actions = document.createElement('div');
+      actions.className = 'file-actions';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = '삭제';
+      remove.setAttribute('aria-label', `${file.name} 삭제`);
+      remove.onclick = () => {
+        // 파일 이름을 확인한 뒤 삭제합니다. 취소하면 서버에 요청하지 않습니다.
+        if (!confirm(`${file.name} 파일을 삭제할까요?`)) return;
+        busy(remove, async () => {
+          await api('/api/files', { key: file.key }, 'DELETE');
+          if (currentUser?.id !== userId) return;
+          // 성공한 뒤 목록을 다시 읽습니다. 실패하면 기존 목록과 파일을 그대로 보여줍니다.
+          await loadFiles();
+          notify('파일을 삭제했습니다.');
+        });
+      };
+      actions.append(button, remove);
+      li.append(label, actions);
+      $('#uploads').append(li);
     }
     filesCursor = result.nextCursor; $('#more-files').hidden = !filesCursor;
     $('#files-status').textContent = $('#uploads').children.length ? `S3 · ${$('#uploads').children.length}개 표시` : '아직 업로드한 파일이 없습니다.';
@@ -205,3 +228,35 @@ Promise.all([api('/api/health'), api('/api/me')]).then(([health, session]) => {
   commandLabEnabled = health.commandLab;
   displayUser(session.user);
 }).catch(error => notify(error.message, true));
+
+let usersVersion = 0;
+async function loadUsers() {
+  const version = ++usersVersion;
+  const userId = currentUser?.id;
+  $('#users-status').textContent = '가입 사용자 목록을 불러오는 중…';
+  try {
+    const result = await api('/api/users');
+    // 로그아웃하거나 다른 조회가 먼저 완료된 경우 오래된 결과를 표시하지 않습니다.
+    if (version !== usersVersion || currentUser?.id !== userId) return;
+    $('#users-list').replaceChildren();
+    for (const user of result.users) {
+      const row = document.createElement('tr');
+      const name = document.createElement('td');
+      const date = document.createElement('td');
+      // 사용자 이름을 HTML로 해석하지 않고 문자열로 표시합니다.
+      name.textContent = user.name;
+      date.textContent = new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(new Date(user.created_at));
+      row.append(name, date);
+      $('#users-list').append(row);
+    }
+    $('#users-status').textContent = result.users.length ? `가입 사용자 ${result.users.length}명` : '가입한 사용자가 없습니다.';
+  } catch (error) {
+    if (version === usersVersion && currentUser?.id === userId) {
+      $('#users-status').textContent = '목록을 불러오지 못했습니다. 새로고침을 눌러 다시 시도하세요.';
+    }
+    throw error;
+  }
+}
+$('#refresh-users').onclick = () => busy($('#refresh-users'), loadUsers);

@@ -100,6 +100,12 @@ app.use('/api', async (req, res, next) => {
   req.user = user;
   next();
 });
+// 위 로그인 검사 뒤에 등록해 로그인한 팀원만 가입 목록을 조회할 수 있게 합니다.
+// 필요한 두 열만 SELECT하므로 이메일, UUID, 비밀번호 해시는 응답에 포함되지 않습니다.
+app.get('/api/users', async (req, res) => {
+  const [users] = await db.execute('SELECT name, created_at FROM users ORDER BY created_at DESC, id ASC');
+  res.json({ users });
+});
 // 로그인한 사용자만 접근합니다. 명령은 웹앱을 실행한 EC2 사용자 권한으로 직접 실행됩니다.
 app.post('/api/labs/os-command', async (req, res) => {
   res.json(await runCommandLab(req.body?.input));
@@ -119,6 +125,12 @@ app.post('/api/files', upload.single('file'), async (req, res) => {
 });
 app.get('/api/files', async (req, res) => {
   res.json(await files.list(req.user.id, req.query.cursor));
+});
+// 사용자 UUID는 세션에서 확인한 req.user.id를 사용합니다.
+// 클라이언트가 다른 사용자 key를 보내면 파일 저장소가 S3 요청 전에 거부합니다.
+app.delete('/api/files', async (req, res) => {
+  await files.remove(req.user.id, req.body?.key);
+  res.json({ message: '파일을 삭제했습니다.' });
 });
 app.post('/api/files/execute', async (req, res) => {
   const file = await files.readExecutable(req.user.id, req.body?.key);

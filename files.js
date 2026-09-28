@@ -1,4 +1,4 @@
-import { PutObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3';
+import { PutObjectCommand, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
@@ -37,6 +37,15 @@ export function createFileStore({ s3, bucket, prefix = 'whs-uploads/' }) {
         try { files.push(describe(userId, object.key, object.size, object.modified)); } catch { /* 앱이 만든 키 형식만 표시합니다. */ }
       }
       return { files, nextCursor };
+    },
+    async remove(userId, key) {
+      // 삭제할 S3 key는 브라우저에서 받지만, 소유자는 요청 값으로 받지 않습니다.
+      // 서버가 세션에서 확인한 사용자 UUID를 전달하므로 다른 사람의 폴더를 삭제할 수 없습니다.
+      if (typeof key !== 'string' || key.length > 1024) throw fail(400, '파일 식별자가 필요합니다.');
+      describe(userId, key);
+      // describe가 사용자 경로와 파일 이름 형식을 검증한 뒤에만 S3 삭제를 요청합니다.
+      // S3는 존재하지 않는 key를 삭제해도 성공하므로 같은 요청을 다시 보내도 안전합니다.
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     },
     async readExecutable(userId, key) {
       if (typeof key !== 'string' || key.length > 1024) throw fail(400, '파일 식별자가 필요합니다.');

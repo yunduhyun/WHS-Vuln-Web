@@ -4,7 +4,7 @@
 <body>
 <header class="topbar">
   <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><img src="/whitehat-school-logo.png" alt=""></span><span class="brand-copy"><strong>WHS Cloud9</strong><small>4분의 3 승강장에서 널 기다려</small></span></a>
-  <nav id="main-nav" aria-label="주 메뉴" hidden><button type="button" data-page="files" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">파일 업로드</button><button type="button" data-page="os" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">OS 명령어</button><button type="button" data-page="ssti" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">SSTI 실습</button><button type="button" data-page="profile" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">팀 프로필</button></nav>
+  <nav id="main-nav" aria-label="주 메뉴" hidden><button type="button" data-page="files" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">파일 업로드</button><button type="button" data-page="os" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">OS 명령어</button><button type="button" data-page="ssti" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">SSTI 실습</button><button type="button" data-page="profile" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">팀 프로필</button><button type="button" data-page="users" aria-haspopup="dialog" aria-controls="feature-dialog" aria-expanded="false">가입 사용자</button></nav>
   <div id="nav-account" hidden><span id="nav-user"></span><button id="logout" class="nav-logout" type="button">로그아웃</button></div>
   <span id="nav-guest" class="lab-pill"><i></i> 인가된 사용자 전용</span>
 </header>
@@ -37,6 +37,11 @@
     </section>
     <section id="page-ssti" class="card feature-page" aria-labelledby="ssti-title" hidden><div class="section-heading"><span class="number">03</span><h2 id="ssti-title">SSTI 실습</h2><span class="tag">TEMPLATE</span></div><p class="description">예시 템플릿을 실행하면 계산 결과가 표시됩니다.</p>
       <form id="ssti-form"><fieldset id="ssti-fields" disabled><label for="ssti-template">EJS 템플릿</label><div class="url-row"><input id="ssti-template" value="&lt;%= 7 * 7 %&gt;" maxlength="2048" required><button class="primary" type="submit">결과 보기</button></div></fieldset></form><pre id="ssti-output" class="command-output" role="status" aria-live="polite" hidden></pre>
+    </section>
+    <section id="page-users" class="card feature-page" aria-labelledby="users-title" hidden>
+      <div class="section-heading"><h2 id="users-title">가입 사용자</h2></div>
+      <div class="row"><p id="users-status" class="muted small" role="status"></p><button id="refresh-users" class="secondary" type="button">목록 새로고침</button></div>
+      <table class="users-table"><thead><tr><th scope="col">이름</th><th scope="col">가입일</th></tr></thead><tbody id="users-list"></tbody></table>
     </section>
     <section id="page-profile" class="card feature-page" aria-labelledby="profile-title" hidden><div class="section-heading"><span class="number">04</span><h2 id="profile-title">팀 프로필</h2><span class="tag">PROFILE</span></div><p class="description">Cloud Nine and Three-Quarters Platform</p>
       <div class="profile"><div class="avatar-wrap"><div id="avatar-placeholder" class="avatar-placeholder">WHS</div><img id="avatar" alt="현재 프로필 이미지" hidden></div><div><h3 id="profile-name">Cloud9 Member</h3><p class="muted small">Cloud9 Team Member</p></div></div>

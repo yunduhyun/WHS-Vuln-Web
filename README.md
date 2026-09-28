@@ -350,7 +350,7 @@ S3_PREFIX=whs-uploads/
 
 업로드·목록·파일 읽기 코드는 `files.js`, 실행 코드는 `file-runner.js`입니다. 업로드 파일은 항상 S3에 저장합니다. EC2에서는 인스턴스 IAM 역할을 사용하고 AWS 키를 코드에 넣지 않습니다. 로컬 개발에서는 AWS 자격 증명으로 S3 접근 권한을 준비해야 합니다.
 
-현재 코드가 필요한 S3 동작은 `PutObject`(업로드), `ListObjectsV2`(사용자 파일 목록), `GetObject`(실행할 파일 읽기)입니다. 이에 맞춘 권한 예시는 다음과 같습니다. `ListBucket`은 버킷 ARN에, 객체 동작은 `whs-uploads/` 객체 ARN에 적용합니다. 삭제 기능이 없으므로 `DeleteObject`는 넣지 않습니다.
+현재 코드가 필요한 S3 동작은 `PutObject`(업로드), `ListObjectsV2`(사용자 파일 목록), `GetObject`(실행할 파일 읽기)입니다. 이에 맞춘 권한 예시는 다음과 같습니다. `ListBucket`은 버킷 ARN에, 객체 동작은 `whs-uploads/` 객체 ARN에 적용합니다. 본인 파일 삭제에는 `DeleteObject`도 필요합니다.
 
 ```json
 {
@@ -370,7 +370,7 @@ S3_PREFIX=whs-uploads/
     {
       "Sid": "ReadWriteWHSUploadObjects",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       "Resource": "arn:aws:s3:::whs-cloud9-vuln-web-lab-896986966760-ap-northeast-2-an/whs-uploads/*"
     }
   ]
@@ -580,3 +580,14 @@ fetch('/api/labs/ssti', {
 ```
 
 템플릿에는 로그인한 사용자의 `name`도 전달됩니다. 위 예시는 무해한 확인용이며, 실습 서버의 파일·비밀값을 실제로 열거나 외부로 전송하는 명령은 포함하지 않습니다.
+
+
+### 가입 사용자와 본인 파일 삭제
+
+로그인한 뒤 상단의 **가입 사용자** 메뉴를 누르면 기존 모달에서 이름과 가입일을 확인한다. `GET /api/users`는 `users` 테이블의 `name`, `created_at`만 반환한다. 이메일, 사용자 UUID, 비밀번호 해시는 반환하지 않는다. 가입일은 화면에서 한국 시간 기준 날짜로 표시한다. 테이블 추가나 변경은 필요 없다.
+
+파일 목록에서 **삭제**를 누르고 파일 이름을 확인하면 `DELETE /api/files`로 `{ "key": "S3 파일 key" }`를 전송한다. 서버는 로그인 세션의 사용자 UUID와 S3 key의 경로가 일치하는지 검사한 뒤 삭제한다. 다른 사용자 경로를 지정하면 403을 반환하며 S3 삭제 요청을 보내지 않는다. 삭제 성공 후 목록을 다시 불러온다.
+
+EC2 IAM 역할에 `s3:DeleteObject`를 추가해야 한다. 위 S3 권한 예시의 객체 ARN(`whs-uploads/*`)에 적용한다. 버킷 ARN에 적용하는 `s3:ListBucket`과 구분한다. S3 버전 관리가 활성화된 버킷에서는 이 요청이 삭제 마커를 만들며 이전 버전은 유지된다. 앱은 이전 버전의 영구 삭제 기능을 제공하지 않는다.
+
+코드를 EC2에 반영한 뒤 `sudo systemctl restart vuln-webapp`으로 서비스를 재시작한다. 사용자 A가 업로드한 파일을 삭제할 수 있는지, 사용자 B의 로그인 세션으로 A의 key를 보내면 403이 반환되는지 확인한다. 로그인하지 않은 상태에서 두 API를 호출하면 401을 반환해야 한다.
