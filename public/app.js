@@ -14,8 +14,22 @@ async function api(url, body, method = 'POST') {
   if (body instanceof FormData) options.body = body;
   else if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '요청에 실패했습니다.');
+  // WAF와 프록시의 HTML 응답을 JSON으로 읽기 전에 응답 형식을 구분합니다.
+  const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (contentType !== 'application/json' && !/^application\/[\w.-]+\+json$/.test(contentType)) {
+    // 403만으로 WAF 차단을 단정하지 않으며, HTML 본문은 화면에 삽입하지 않습니다.
+    const message = response.ok ? '서버 응답 형식이 JSON이 아닙니다.'
+      : response.status === 403 ? '요청이 거부되었습니다.' : '요청에 실패했습니다.';
+    throw new Error(`${message} HTTP ${response.status}`);
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    // JSON 헤더를 보냈더라도 본문이 손상된 경우 브라우저 내부 오류를 대신합니다.
+    throw new Error(`서버의 JSON 응답을 읽지 못했습니다. HTTP ${response.status}`);
+  }
+  if (!response.ok) throw new Error(data?.error || '요청에 실패했습니다.');
   return data;
 }
 function avatar(image) {
